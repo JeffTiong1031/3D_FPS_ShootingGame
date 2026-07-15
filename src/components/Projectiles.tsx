@@ -37,7 +37,7 @@ const Projectile = ({ id, position, velocity, owner, damage }: ProjectileData) =
 
   return (
     <RigidBody 
-      type="kinematicVelocity" 
+      type="dynamic" 
       position={position} 
       linearVelocity={velocity}
       gravityScale={0}

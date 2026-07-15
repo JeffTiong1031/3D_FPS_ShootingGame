@@ -7,13 +7,15 @@ import { Arena } from './Arena';
 import { Player } from './Player';
 import { Enemy } from './Enemy';
 import { Projectiles } from './Projectiles';
+import { Pickups } from './Pickups';
 
 enum Controls {
   forward = 'forward',
   backward = 'backward',
   left = 'left',
   right = 'right',
-  jump = 'jump',
+  crouch = 'crouch',
+  reload = 'reload',
 }
 
 export const GameEngine: React.FC = () => {
@@ -22,7 +24,8 @@ export const GameEngine: React.FC = () => {
     { name: Controls.backward, keys: ['ArrowDown', 'KeyS'] },
     { name: Controls.left, keys: ['ArrowLeft', 'KeyA'] },
     { name: Controls.right, keys: ['ArrowRight', 'KeyD'] },
-    { name: Controls.jump, keys: ['Space'] },
+    { name: Controls.crouch, keys: ['Space'] },
+    { name: Controls.reload, keys: ['KeyR'] },
   ];
 
   return (
@@ -41,6 +44,7 @@ export const GameEngine: React.FC = () => {
           <Player />
           <Enemy />
           <Projectiles />
+          <Pickups />
         </Physics>
       </Canvas>
     </KeyboardControls>

@@ -57,14 +57,35 @@ export const Player: React.FC = () => {
   useEffect(() => {
     const handleMouseDown = () => {
       // Read game state imperatively at click time — no stale closure
-      const { gameState } = useGameStore.getState();
+      const { gameState, consumePlayerAmmo, playerIsReloading } = useGameStore.getState();
       if (gameState !== 'playing') return;
-      if (document.pointerLockElement) {
-        isShooting.current = true;
+      if (document.pointerLockElement && !playerIsReloading) {
+        if (consumePlayerAmmo()) {
+          isShooting.current = true;
+        }
       }
     };
     window.addEventListener('mousedown', handleMouseDown);
-    return () => window.removeEventListener('mousedown', handleMouseDown);
+    
+    const unsubscribeReload = subscribeKeys(
+      (state) => state.reload,
+      (pressed) => {
+        if (pressed) {
+          const { playerIsReloading, playerAmmoClip, playerAmmoReserve, setPlayerReloading, reloadPlayer, gameState } = useGameStore.getState();
+          if (gameState === 'playing' && !playerIsReloading && playerAmmoClip < 16 && playerAmmoReserve > 0) {
+            setPlayerReloading(true);
+            setTimeout(() => {
+              reloadPlayer();
+            }, 1500); // 1.5s reload time
+          }
+        }
+      }
+    );
+
+    return () => {
+      window.removeEventListener('mousedown', handleMouseDown);
+      unsubscribeReload();
+    };
   }, []); // No dependencies needed — we read state imperatively
 
   useFrame(() => {
@@ -72,12 +93,13 @@ export const Player: React.FC = () => {
     const { gameState, addProjectile, recordShot } = useGameStore.getState();
     if (gameState !== 'playing' || !rigidBodyRef.current) return;
 
-    const { forward, backward, left, right } = getKeys();
+    const { forward, backward, left, right, crouch } = getKeys();
     const velocity = rigidBodyRef.current.linvel();
     const position = rigidBodyRef.current.translation();
 
     // Update camera to match player
-    camera.position.set(position.x, position.y + 0.8, position.z);
+    const cameraHeight = crouch ? 0.4 : 0.8;
+    camera.position.set(position.x, position.y + cameraHeight, position.z);
 
     // Movement — use camera's actual world direction to avoid Euler gimbal lock issues
     const forwardVector = new THREE.Vector3();
@@ -94,7 +116,8 @@ export const Player: React.FC = () => {
     if (right) direction.add(rightVector);
     if (left) direction.sub(rightVector);
 
-    direction.normalize().multiplyScalar(SPEED);
+    const currentSpeed = crouch ? SPEED * 0.5 : SPEED;
+    direction.normalize().multiplyScalar(currentSpeed);
     rigidBodyRef.current.setLinvel({ x: direction.x, y: velocity.y, z: direction.z }, true);
 
     // Shooting logic

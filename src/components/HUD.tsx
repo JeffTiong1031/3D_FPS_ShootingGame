@@ -32,7 +32,10 @@ const difficultyCards: { key: Difficulty; label: string; desc: string; icon: Rea
 ];
 
 export const HUD: React.FC = () => {
-  const { gameState, playerHealth, enemyHealth, startGame, resetGame, returnToMenu } = useGameStore();
+  const { 
+    gameState, playerHealth, enemyHealth, startGame, resetGame, returnToMenu,
+    playerAmmoClip, playerAmmoReserve, playerIsReloading
+  } = useGameStore();
 
   return (
     <div className="hud-overlay">
@@ -51,6 +54,20 @@ export const HUD: React.FC = () => {
               <div className="health-fill" style={{ width: `${enemyHealth}%`, backgroundColor: '#f87171' }}></div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Ammo Display */}
+      {gameState === 'playing' && (
+        <div className="ammo-container" style={{ position: 'absolute', bottom: '40px', right: '40px', color: 'white', fontFamily: 'monospace', textShadow: '0 0 10px rgba(0,0,0,0.8)', textAlign: 'right', zIndex: 10 }}>
+          {playerIsReloading ? (
+            <div style={{ color: '#facc15', fontSize: '24px', fontWeight: 'bold' }}>RELOADING...</div>
+          ) : (
+            <div>
+              <span style={{ fontSize: '48px', fontWeight: 'bold', color: playerAmmoClip === 0 ? '#f87171' : 'white' }}>{playerAmmoClip}</span>
+              <span style={{ fontSize: '24px', color: '#9ca3af' }}> / {playerAmmoReserve}</span>
+            </div>
+          )}
         </div>
       )}
 

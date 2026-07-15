@@ -19,6 +19,7 @@ export const Enemy: React.FC = () => {
   // Mutable refs for values read inside useFrame — avoids stale closures
   const lastShotRef = useRef(0);
   const targetPointRef = useRef(new THREE.Vector3(0, 0, 0));
+  const isCrouchingRef = useRef(false);
   const registeredHandle = useRef<number | null>(null);
 
   // Register enemy collider in the registry once the collider ref is available
@@ -54,6 +55,8 @@ export const Enemy: React.FC = () => {
       const rx = (Math.random() - 0.5) * 40;
       const rz = (Math.random() - 0.5) * 40;
       targetPointRef.current.set(rx, 0, rz);
+      // 50% chance to crouch when picking a new patrol point
+      isCrouchingRef.current = Math.random() > 0.5;
     }, 4000);
     return () => clearInterval(interval);
   }, []);
@@ -103,43 +106,86 @@ export const Enemy: React.FC = () => {
       // Look at player
       meshRef.current.lookAt(camera.position.x, meshRef.current.position.y, camera.position.z);
 
+      const { enemyAmmoClip, enemyIsReloading, setEnemyReloading, reloadEnemy, consumeEnemyAmmo } = useGameStore.getState();
+
+      if (!enemyIsReloading && enemyAmmoClip <= 0) {
+        setEnemyReloading(true);
+        setTimeout(() => {
+          reloadEnemy();
+        }, 1500); // 1.5s reload
+      }
+
       const now = Date.now();
-      if (now - lastShotRef.current > config.enemyFireRate) {
-        lastShotRef.current = now;
-        
-        // Add inaccuracy (spread) to the shot target
-        const spread = config.enemySpread !== undefined ? config.enemySpread : 1.5;
-        const spreadOffset = new THREE.Vector3(
-          (Math.random() - 0.5) * spread,
-          (Math.random() - 0.5) * spread,
-          (Math.random() - 0.5) * spread
-        );
-        
-        // Calculate new shot direction
-        const inaccurateTarget = new THREE.Vector3().copy(camera.position).add(spreadOffset);
-        const shotDirection = new THREE.Vector3().subVectors(inaccurateTarget, rayOrigin).normalize();
-        
-        // Spawn physical projectile
-        const speed = 25; // slightly slower than player
-        addProjectile({
-          id: Math.random().toString(36).substr(2, 9),
-          position: [rayOrigin.x, rayOrigin.y, rayOrigin.z],
-          velocity: [
-            shotDirection.x * speed,
-            shotDirection.y * speed,
-            shotDirection.z * speed,
-          ],
-          owner: 'enemy',
-          damage: config.enemyDamage
-        });
+      if (!enemyIsReloading && enemyAmmoClip > 0 && now - lastShotRef.current > config.enemyFireRate) {
+        if (consumeEnemyAmmo()) {
+          lastShotRef.current = now;
+          
+          // Add inaccuracy (spread) to the shot target
+          const spread = config.enemySpread !== undefined ? config.enemySpread : 1.5;
+          const spreadOffset = new THREE.Vector3(
+            (Math.random() - 0.5) * spread,
+            (Math.random() - 0.5) * spread,
+            (Math.random() - 0.5) * spread
+          );
+          
+          // Calculate new shot direction
+          const inaccurateTarget = new THREE.Vector3().copy(camera.position).add(spreadOffset);
+          const shotDirection = new THREE.Vector3().subVectors(inaccurateTarget, rayOrigin).normalize();
+          
+          // Spawn physical projectile
+          const speed = 25; // slightly slower than player
+          addProjectile({
+            id: Math.random().toString(36).substr(2, 9),
+            position: [rayOrigin.x, rayOrigin.y, rayOrigin.z],
+            velocity: [
+              shotDirection.x * speed,
+              shotDirection.y * speed,
+              shotDirection.z * speed,
+            ],
+            owner: 'enemy',
+            damage: config.enemyDamage
+          });
+        }
       }
     }
 
-    // 2. Movement Logic (Patrol continuously)
-    const dir = new THREE.Vector3().subVectors(targetPointRef.current, enemyPos);
+    // Update enemy mesh scale/position for crouching
+    const isCrouching = isCrouchingRef.current;
+    meshRef.current.scale.y = isCrouching ? 0.6 : 1.0;
+    meshRef.current.position.y = isCrouching ? -0.3 : 0;
+
+    // 2. Movement Logic (Patrol continuously or seek pickups)
+    let currentTarget = targetPointRef.current;
+    
+    const { enemyHealth, enemyAmmoClip, enemyAmmoReserve, pickups } = useGameStore.getState();
+    const needsHealth = enemyHealth < config.enemyMaxHealth * 0.5;
+    const needsAmmo = enemyAmmoClip + enemyAmmoReserve < 30;
+
+    if (needsHealth || needsAmmo) {
+      let closestPickup: any = null;
+      let minDistance = Infinity;
+
+      pickups.forEach(p => {
+        if ((needsHealth && p.type === 'health') || (needsAmmo && p.type === 'ammo')) {
+          const pPos = new THREE.Vector3(...p.position);
+          const dist = enemyPos.distanceTo(pPos);
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestPickup = p;
+          }
+        }
+      });
+
+      if (closestPickup) {
+        currentTarget = new THREE.Vector3(...closestPickup.position);
+      }
+    }
+
+    const dir = new THREE.Vector3().subVectors(currentTarget, enemyPos);
     dir.y = 0;
+    const currentSpeed = isCrouching ? config.enemySpeed * 0.5 : config.enemySpeed;
     if (dir.length() > 1) {
-      dir.normalize().multiplyScalar(config.enemySpeed);
+      dir.normalize().multiplyScalar(currentSpeed);
       rigidBodyRef.current.setLinvel({ x: dir.x, y: rigidBodyRef.current.linvel().y, z: dir.z }, true);
       
       // Only face the movement direction if not already staring down the player
